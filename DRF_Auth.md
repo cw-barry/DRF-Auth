@@ -369,15 +369,58 @@ def create_auth_token(sender, instance=None, created=False, **kwargs):
 go to serializers.py
 
 ```python
-from django.contrib.auth.models import User
 from rest_framework import serializers
+from django.contrib.auth.models import User
+from rest_framework.validators import UniqueValidator
+from django.contrib.auth.password_validation import validate_password
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(
+            required=True,
+            validators=[UniqueValidator(queryset=User.objects.all())]
+            )
+
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password']
+        fields = ('username', 'password', 'password2', 'email', 'first_name', 'last_name')
+        extra_kwargs = {
+            'first_name': {'required': True},
+            'last_name': {'required': True}
+        }
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+
+        return attrs
+
+    def create(self, validated_data):
+        user = User.objects.create(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name']
+        )
+
+        
+        user.set_password(validated_data['password'])
+        user.save()
+
+        return user
+
+# from django.contrib.auth.models import User
+# from rest_framework import serializers
+
+
+# class RegistrationSerializer(serializers.ModelSerializer):
+
+#     class Meta:
+#         model = User
+#         fields = ['username', 'email', 'password']
 ```
 
 go to main urls.py, and add following line into urlpatterns
@@ -395,11 +438,12 @@ go to user_api urls.py
 ```python
 from rest_framework.authtoken.views import obtain_auth_token
 from django.urls import path
-from .views import registration_view, logout_view
+from .views import  logout_view, RegisterView # ,registration_view
 
 urlpatterns = [
     path('login/', obtain_auth_token, name='login'),
-    path('register/', registration_view, name='register'),
+    # path('register/', registration_view, name='register'),
+    path('register/', RegisterView.as_view(), name='register'),
     path('logout/', logout_view, name='logout'),
 ]
 ```
@@ -411,27 +455,46 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializers import RegistrationSerializer
 from rest_framework.authtoken.models import Token
+from rest_framework import generics
+from django.contrib.auth.models import User
+from rest_framework import status
+
 
 # Create your views here.
+# Registration with function based view
+# @api_view(['POST'])
+# def registration_view(request):
+#     if request.method == 'POST':
+#         serializer = RegistrationSerializer(data=request.data)
+#         data = {}
+#         if serializer.is_valid():
+#             password = serializer.validated_data.get('password')
+#             # serializer.validated_data['password'] = make_password(password)
+#             user = serializer.save()
+#             user.set_password(password)
+#             user.save()
+#             # token, _ = Token.objects.get_or_create(user=user)
+#             # data = serializer.data
+#             # data['token'] = token.key
+#         else:
+#             data = serializer.errors
+#         return Response(data)
 
-@api_view(['POST'])
-def registration_view(request):
-    if request.method == 'POST':
-        serializer = RegistrationSerializer(data=request.data)
-        data = {}
-        if serializer.is_valid():
-            password = serializer.validated_data.get('password')
-            serializer.validated_data['password'] = make_password(password)
-            user = serializer.save()
-            # user.set_password(password)
-            # user.save()
-            token, _ = Token.objects.get_or_create(user=user)
-            data = serializer.data
-            data['token'] = token.key
-        else:
-            data = serializer.errors
-        return Response(data)
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = RegistrationSerializer
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid(raise_exception=False):
+            return Response({"message": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        user = serializer.save()
+        token= Token.objects.create(user=user)
+        data = serializer.data
+        data['token'] = token.key
+        headers = self.get_success_headers(serializer.data)
+        return Response({"message": "created successfully", "details": data}, status=status.HTTP_201_CREATED, headers=headers)
+  
 @api_view(['POST'])
 def logout_view(request):
     if request.method == 'POST':

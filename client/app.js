@@ -167,7 +167,11 @@ const loginRergister = async function (url) {
   let data = new FormData();
 
   data.append('username', document.getElementById('username').value);
+  data.append('email', document.getElementById('email').value);
   data.append('password', document.getElementById('password').value);
+  data.append('password2', document.getElementById('password2').value);
+  data.append('first_name', document.getElementById('firstName').value);
+  data.append('last_name', document.getElementById('lastName').value);
 
   try {
     const response = await axios({
@@ -181,7 +185,11 @@ const loginRergister = async function (url) {
     displayStudents();
     displayUser(data.get('username'));
     document.getElementById('username').value = '';
+    document.getElementById('email').value = '';
     document.getElementById('password').value = '';
+    document.getElementById('password2').value = '';
+    document.getElementById('firstName').value = '';
+    document.getElementById('lastName').value = '';
   } catch (err) {
     console.log(err.message);
     displayMessages(err.response.data.message, 'danger');
